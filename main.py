@@ -20,10 +20,9 @@ def abrir_separar_fotos():
 
 def abrir_separar_fotos_multi():
     try:
-        separaFotosMulti.main(janela_dashboard)
+        separaFotosMulti.janela_separador_fotos_multi(janela_dashboard)
     except Exception as e:
         messagebox.showerror("Erro", f"Falha ao abrir separador de fotos: {str(e)}")
-
 
 # Configuração da janela principal
 janela_dashboard = tk.Tk()
@@ -57,8 +56,8 @@ frame_botoes.pack()
 botao_separar_fotos = ttk.Button(frame_botoes, text="Separar Fotos de Alunos", command=abrir_separar_fotos, style="Accent.TButton", width=30)
 botao_separar_fotos.pack(pady=10)
 
-botao_separar_fotos = ttk.Button(frame_botoes, text="Separar Fotos de Alunos Multi", command=abrir_separar_fotos_multi, style="Accent.TButton", width=30)
-botao_separar_fotos.pack(pady=10)
+botao_separar_fotos_multi = ttk.Button(frame_botoes, text="Separar Fotos de Alunos Multi", command=abrir_separar_fotos_multi, style="Accent.TButton", width=30)
+botao_separar_fotos_multi.pack(pady=10)
 
 botao_relatorio = ttk.Button(frame_botoes, text="Relatório de Alunos", command=abrir_fazer_relatorio, style="Accent.TButton", width=30)
 botao_relatorio.pack(pady=10)

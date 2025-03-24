@@ -52,7 +52,7 @@ class SeparadorFotos:
         ttk.Entry(frame_principal, textvariable=self.pasta_saida, width=50).grid(row=4, column=1, padx=5, pady=3)
         ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_saida, style="Accent.TButton").grid(row=4, column=2, padx=5, pady=5)
 
-        ttk.Checkbutton(frame_principal, text="Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=5, column=0, columnspan=3, pady=5)
+        ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=5, column=0, columnspan=3, pady=5, padx=2, sticky="w")
 
         # Frame para o texto com barra de rolagem
         texto_frame = ttk.Frame(frame_principal)
@@ -349,10 +349,8 @@ class SeparadorFotos:
                 self.log(f"Erro ao iniciar processamento: {str(e)}", atualizar_imediatamente=True)
                 self.root.after(0, lambda: messagebox.showerror("Erro", f"Falha ao iniciar: {str(e)}"))
 
-def main():
-    root = tk.Tk()
-    app = SeparadorFotos(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
+def janela_separador_fotos_multi(parent):
+    janela = tk.Toplevel(parent)
+    janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
+    janela.geometry("740x650")
+    app = SeparadorFotos(janela)
