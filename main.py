@@ -20,7 +20,7 @@ def abrir_separar_fotos():
 
 def abrir_separar_fotos_multi():
     try:
-        separaFotosMulti.janela_separador_fotos_multi(janela_dashboard)
+        separaFotosMulti.main(janela_dashboard)
     except Exception as e:
         messagebox.showerror("Erro", f"Falha ao abrir separador de fotos: {str(e)}")
 
