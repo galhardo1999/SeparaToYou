@@ -8,7 +8,6 @@ import time
 from PIL import Image
 from multiprocessing import Pool, cpu_count
 import threading
-import pickle  # Para 1.1 Cache das Codificações
 
 class SeparadorFotos:
     def __init__(self, root):
@@ -23,7 +22,6 @@ class SeparadorFotos:
         self.cancelar = False
         self.processamento_ativo = False
         self.modo_multi = tk.BooleanVar(value=False)
-        self.tolerancia = tk.DoubleVar(value=0.55)  # 2.2 Configuração da Tolerância
 
         # Estilo ttk
         style = ttk.Style()
@@ -54,15 +52,11 @@ class SeparadorFotos:
         ttk.Entry(frame_principal, textvariable=self.pasta_saida, width=50).grid(row=4, column=1, padx=5, pady=3)
         ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_saida, style="Accent.TButton").grid(row=4, column=2, padx=5, pady=5)
 
-        # 2.2 Configuração da Tolerância
-        ttk.Label(frame_principal, text="Tolerância de Reconhecimento (0.4-0.6):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
-        ttk.Entry(frame_principal, textvariable=self.tolerancia, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
-
-        ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=6, column=0, columnspan=3, pady=5, padx=2, sticky="w")
+        ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=5, column=0, columnspan=3, pady=5, padx=2, sticky="w")
 
         # Frame para o texto com barra de rolagem
         texto_frame = ttk.Frame(frame_principal)
-        texto_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=10, sticky="nsew")
+        texto_frame.grid(row=6, column=0, columnspan=3, padx=5, pady=10, sticky="nsew")
 
         self.log_texto = tk.Text(texto_frame, height=15, width=97, font=("Helvetica", 10))
         self.log_texto.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -72,14 +66,14 @@ class SeparadorFotos:
         self.log_texto.configure(yscrollcommand=scrollbar.set)
 
         self.progresso = ttk.Progressbar(frame_principal, length=650, mode='determinate')
-        self.progresso.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
+        self.progresso.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
 
         self.label_progresso = ttk.Label(frame_principal, text="Progresso: 0% | Tempo estimado: --")
-        self.label_progresso.grid(row=9, column=0, columnspan=3, pady=8)
+        self.label_progresso.grid(row=8, column=0, columnspan=3, pady=8)
 
         # Frame para botões
         frame_botoes = ttk.Frame(frame_principal, style="Transparent.TFrame")
-        frame_botoes.grid(row=10, column=0, columnspan=3, pady=10)
+        frame_botoes.grid(row=9, column=0, columnspan=3, pady=10)
 
         self.botao_iniciar = ttk.Button(frame_botoes, text="Iniciar Processamento", command=self.iniciar_processamento, style="Accent.TButton", width=25)
         self.botao_iniciar.grid(row=0, column=0, padx=5, pady=8)
@@ -88,7 +82,7 @@ class SeparadorFotos:
         self.botao_cancelar.grid(row=0, column=1, padx=5, pady=8)
 
         # Rodapé
-        ttk.Label(frame_principal, text="© 2025 - Desenvolvido por Alexandre Galhardo", font=("Helvetica", 8), foreground="#999").grid(row=11, column=0, columnspan=3, pady=10)
+        ttk.Label(frame_principal, text="© 2025 - Desenvolvido por Alexandre Galhardo", font=("Helvetica", 8), foreground="#999").grid(row=10, column=0, columnspan=3, pady=10)
 
         # Centralizar janela
         self.root.update_idletasks()
@@ -119,10 +113,8 @@ class SeparadorFotos:
         if pasta:
             self.pasta_saida.set(pasta)
 
-    # 3.2 Log com Timestamp
     def log(self, mensagem, atualizar_imediatamente=False):
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.log_texto.insert(tk.END, f"[{timestamp}] {mensagem}\n")
+        self.log_texto.insert(tk.END, mensagem + "\n")
         self.log_texto.see(tk.END)
         if atualizar_imediatamente:
             self.root.update_idletasks()
@@ -152,26 +144,15 @@ class SeparadorFotos:
         except Exception as e:
             return face_recognition.load_image_file(caminho), f"Erro ao pré-processar {caminho}: {str(e)}"
 
-    # 3.1 Tratamento de Arquivos Corrompidos e 3.3 Suporte a Múltiplos Rostos
     @staticmethod
     def processar_uma_foto(args):
-        foto, pasta_saida, identificacoes, tolerancia, cancelar = args
+        foto, pasta_saida, identificacoes, cancelar = args
         if cancelar:
             return f"Cancelado: {foto}"
 
         pasta_nao_identificadas = os.path.join(pasta_saida, "Fotos Não Identificadas")
-        pasta_corrompidas = os.path.join(pasta_saida, "Fotos Corrompidas")
-        Path(pasta_corrompidas).mkdir(parents=True, exist_ok=True)
-
         try:
-            with Image.open(foto) as img:
-                img.verify()  # Verifica integridade
-        except Exception as e:
-            destino = os.path.join(pasta_corrompidas, os.path.basename(foto))
-            shutil.move(foto, destino)
-            return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas"
-
-        try:
+            Image.open(foto).verify()
             imagem_desconhecida, erro = SeparadorFotos.preprocessar_imagem(foto)
             if erro:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
@@ -185,23 +166,23 @@ class SeparadorFotos:
                 shutil.copy(foto, destino)
                 return f"Nenhum rosto encontrado em {foto}"
 
-            identificados = []
+            identificados = False
             for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
                 distancias = face_recognition.face_distance(list(identificacoes.values()), codificacao_desconhecida)
+                tolerancia = 0.55
                 menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
 
-                if menor_distancia <= tolerancia:  # 2.2 Tolerância configurável
+                if menor_distancia <= tolerancia:
+                    identificados = True
                     indice_melhor = distancias.argmin()
                     nome_aluno = list(identificacoes.keys())[indice_melhor]
                     pasta_aluno = os.path.join(pasta_saida, nome_aluno)
                     Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
                     destino = os.path.join(pasta_aluno, os.path.basename(foto))
                     shutil.copy(foto, destino)
-                    identificados.append(f"Rosto {j+1} identificado como {nome_aluno} (distância: {menor_distancia:.2f})")
+                    return f"Rosto {j+1} em {foto} identificado como {nome_aluno} (distância: {menor_distancia:.2f})"
 
-            if identificados:
-                return "; ".join(identificados)
-            else:
+            if not identificados:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
                 return f"Foto {foto} movida para Não Identificadas"
@@ -210,25 +191,13 @@ class SeparadorFotos:
             shutil.copy(foto, destino)
             return f"Erro ao processar {foto}: {str(e)}"
 
-    # 1.1 Cache das Codificações de Identificação
     def carregar_identificacoes(self, pasta_identificacao):
-        cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, 'rb') as f:
-                    identificacoes = pickle.load(f)
-                self.log("Identificações carregadas do cache.")
-                return identificacoes
-            except Exception as e:
-                self.log(f"Erro ao carregar cache: {str(e)}. Recalculando identificações...")
-
         identificacoes = {}
         for arquivo in os.listdir(pasta_identificacao):
             if self.cancelar:
                 break
             caminho = os.path.join(pasta_identificacao, arquivo)
-            # 4.1 Suporte a Outros Formatos
-            if not os.path.isfile(caminho) or not arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff')):
+            if not os.path.isfile(caminho) or not arquivo.lower().endswith(('.jpg', '.jpeg', '.png')):
                 continue
             try:
                 Image.open(caminho).verify()
@@ -246,21 +215,12 @@ class SeparadorFotos:
                 self.log(f"Carregada identificação de {nome_aluno}")
             except Exception as e:
                 self.log(f"Erro ao carregar {arquivo}: {str(e)}")
-
-        # Salvar no cache
-        try:
-            with open(cache_file, 'wb') as f:
-                pickle.dump(identificacoes, f)
-            self.log("Identificações salvas no cache.")
-        except Exception as e:
-            self.log(f"Erro ao salvar cache: {str(e)}")
         return identificacoes
 
     def processar_fotos_single(self):
         pasta_fotos = self.pasta_fotos.get()
         pasta_identificacao = self.pasta_identificacao.get()
         pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()  # 2.2 Tolerância configurável
 
         if not (pasta_fotos and pasta_identificacao and pasta_saida):
             self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
@@ -276,9 +236,8 @@ class SeparadorFotos:
         self.log("Iniciando processamento (Single-Processing)...", atualizar_imediatamente=True)
 
         identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        # 4.1 Suporte a Outros Formatos
         fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
-                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
+                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total_fotos = len(fotos)
         self.log(f"Total de fotos a processar: {total_fotos}")
         fotos_processadas = 0
@@ -287,7 +246,7 @@ class SeparadorFotos:
         for i, foto in enumerate(fotos):
             if self.cancelar:
                 break
-            resultado = self.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, self.cancelar))
+            resultado = self.processar_uma_foto((foto, pasta_saida, identificacoes, self.cancelar))
             self.log(resultado)
 
             fotos_processadas += 1
@@ -306,23 +265,10 @@ class SeparadorFotos:
 
         self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
 
-    # 1.3 Batch Processing no Multi-Processing
-    @staticmethod
-    def processar_lote(args):
-        batch, pasta_saida, identificacoes, tolerancia, cancelar = args
-        resultados = []
-        for foto in batch:
-            if cancelar:
-                break
-            resultados.append(SeparadorFotos.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, cancelar)))
-        return resultados
-
-    # 1.2 Ajuste Dinâmico do Número de Processos e 1.3 Batch Processing
     def processar_fotos_multi(self):
         pasta_fotos = self.pasta_fotos.get()
         pasta_identificacao = self.pasta_identificacao.get()
         pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()  # 2.2 Tolerância configurável
 
         if not (pasta_fotos and pasta_identificacao and pasta_saida):
             self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
@@ -338,32 +284,27 @@ class SeparadorFotos:
         self.log("Iniciando processamento (Multi-Processing)...", atualizar_imediatamente=True)
 
         identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        # 4.1 Suporte a Outros Formatos
         fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
-                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
+                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total_fotos = len(fotos)
         self.log(f"Total de fotos a processar: {total_fotos}")
 
-        # 1.2 Ajuste Dinâmico do Número de Processos
-        num_processes = min(int(cpu_count() * 0.8), max(1, total_fotos // 10))
+        num_processes = int(cpu_count() * 0.8)
         tempo_inicio = time.time()
         fotos_processadas = 0
-        batch_size = 10  # Tamanho do lote para batch processing
 
         try:
             with Pool(processes=num_processes) as pool:
-                self.log(f"Pool de processos iniciado com {num_processes} processos.", atualizar_imediatamente=True)
-                batches = [fotos[i:i + batch_size] for i in range(0, len(fotos), batch_size)]
-                args = [(batch, pasta_saida, identificacoes, tolerancia, self.cancelar) for batch in batches]
-                resultados = pool.imap(self.processar_lote, args)
+                self.log("Pool de processos iniciado.", atualizar_imediatamente=True)
+                args = [(foto, pasta_saida, identificacoes, self.cancelar) for foto in fotos]
+                resultados = pool.imap(self.processar_uma_foto, args)
 
-                for i, resultado_batch in enumerate(resultados):
+                for i, resultado in enumerate(resultados):
                     if self.cancelar:
                         pool.terminate()
                         break
-                    for resultado in resultado_batch:
-                        self.log(resultado)
-                        fotos_processadas += 1
+                    self.log(resultado)
+                    fotos_processadas += 1
                     percentual = (fotos_processadas / total_fotos) * 100
                     tempo_decorrido = time.time() - tempo_inicio
                     tempo_medio = tempo_decorrido / fotos_processadas if fotos_processadas > 0 else 0
@@ -374,7 +315,7 @@ class SeparadorFotos:
                     tempo_str = f"{minutos}m {segundos}s"
                     self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
 
-                    if i % 10 == 0 or i == len(batches) - 1:
+                    if i % 10 == 0 or i == total_fotos - 1:
                         self.root.update_idletasks()
         except Exception as e:
             self.log(f"Erro no Pool: {str(e)}", atualizar_imediatamente=True)
