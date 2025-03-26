@@ -14,7 +14,7 @@ class SeparadorFotos:
     def __init__(self, root):
         self.root = root
         self.root.title("Separador de Fotos por Reconhecimento Facial")
-        self.root.geometry("740x650")
+        self.root.geometry("740x700")
         self.root.configure(bg="#f5f6f5")
 
         self.pasta_fotos = tk.StringVar()
@@ -168,7 +168,7 @@ class SeparadorFotos:
                 shutil.copy(foto, destino)
                 return erro
 
-            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=0)
+            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=1)
 
             if len(codificacoes_desconhecidas) == 0:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
@@ -179,18 +179,24 @@ class SeparadorFotos:
             foto_copiada = False
 
             for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
-                distancias = face_recognition.face_distance(list(identificacoes.values()), codificacao_desconhecida)
-                menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+                melhor_distancia = float('inf')
+                melhor_aluno = None
 
-                if menor_distancia <= tolerancia:
-                    indice_melhor = distancias.argmin()
-                    nome_aluno = list(identificacoes.keys())[indice_melhor]
-                    pasta_aluno = os.path.join(pasta_saida, nome_aluno)
+                # Comparar com todas as codificações de cada aluno
+                for nome_aluno, codificacoes_aluno in identificacoes.items():
+                    distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
+                    menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+                    if menor_distancia < melhor_distancia:
+                        melhor_distancia = menor_distancia
+                        melhor_aluno = nome_aluno
+
+                if melhor_distancia <= tolerancia:
+                    pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
                     Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
                     destino = os.path.join(pasta_aluno, os.path.basename(foto))
                     shutil.copy(foto, destino)
                     foto_copiada = True
-                    identificados.append(f"Rosto {j+1} identificado como {nome_aluno} (distância: {menor_distancia:.2f})")
+                    identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
 
             if not identificados:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
@@ -228,14 +234,15 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=0)
+                # Aumentar num_jitters para capturar mais variações
+                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
-                codificacao = codificacoes[0]
                 nome_aluno = os.path.splitext(arquivo)[0]
-                identificacoes[nome_aluno] = codificacao
-                self.log(f"Carregada identificação de {nome_aluno}")
+                # Armazenar todas as codificações do aluno como uma lista
+                identificacoes[nome_aluno] = codificacoes
+                self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
             except Exception as e:
                 self.log(f"Erro ao carregar {arquivo}: {str(e)}")
 
@@ -397,5 +404,5 @@ class SeparadorFotos:
 def janela_separador_fotos_multi(parent):
     janela = tk.Toplevel(parent)
     janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
-    janela.geometry("740x665")
+    janela.geometry("740x700")
     app = SeparadorFotos(janela)

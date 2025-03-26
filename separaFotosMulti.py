@@ -146,7 +146,7 @@ class SeparadorFotos:
     def processar_uma_foto(args):
         foto, pasta_saida, identificacoes, tolerancia, cancelar = args
         if cancelar:
-            return f"Cancelado: {foto}"
+            return f"Cancelado: {foto}", None
 
         pasta_nao_identificadas = os.path.join(pasta_saida, "Fotos Não Identificadas")
         pasta_corrompidas = os.path.join(pasta_saida, "Fotos Corrompidas")
@@ -159,30 +159,29 @@ class SeparadorFotos:
         except Exception as e:
             destino = os.path.join(pasta_corrompidas, os.path.basename(foto))
             shutil.move(foto, destino)
-            return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas"
+            return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas", None
 
         try:
             imagem_desconhecida, erro = SeparadorFotos.preprocessar_imagem(foto)
             if erro:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
-                return erro
+                return erro, None
 
             codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=1)
-
             if len(codificacoes_desconhecidas) == 0:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
-                return f"Nenhum rosto encontrado em {foto}"
+                return f"Nenhum rosto encontrado em {foto}", None
 
             identificados = []
             foto_copiada = False
+            novas_codificacoes = {}  # Dicionário para armazenar novas codificações por aluno
 
             for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
                 melhor_distancia = float('inf')
                 melhor_aluno = None
 
-                # Comparar com todas as codificações de cada aluno
                 for nome_aluno, codificacoes_aluno in identificacoes.items():
                     distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
                     menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
@@ -197,18 +196,23 @@ class SeparadorFotos:
                     shutil.copy(foto, destino)
                     foto_copiada = True
                     identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
+                    # Adicionar codificação se a confiança for alta (distância < 0.45)
+                    if melhor_distancia < 0.45:  # Limite de confiança ajustável
+                        if melhor_aluno not in novas_codificacoes:
+                            novas_codificacoes[melhor_aluno] = []
+                        novas_codificacoes[melhor_aluno].append(codificacao_desconhecida)
 
             if not identificados:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
-                return f"Foto {foto} movida para Não Identificadas"
-            
-            return "; ".join(identificados) if identificados else f"Foto {foto} movida para Não Identificadas"
+                return f"Foto {foto} movida para Não Identificadas", None
+
+            return "; ".join(identificados), novas_codificacoes
 
         except Exception as e:
             destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
             shutil.copy(foto, destino)
-            return f"Erro ao processar {foto}: {str(e)}"
+            return f"Erro ao processar {foto}: {str(e)}", None
 
     def carregar_identificacoes(self, pasta_identificacao):
         cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
@@ -234,13 +238,11 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                # Aumentar num_jitters para capturar mais variações
-                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=5)
+                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
                 nome_aluno = os.path.splitext(arquivo)[0]
-                # Armazenar todas as codificações do aluno como uma lista
                 identificacoes[nome_aluno] = codificacoes
                 self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
             except Exception as e:
@@ -252,6 +254,39 @@ class SeparadorFotos:
             self.log("Identificações salvas no cache.")
         except Exception as e:
             self.log(f"Erro ao salvar cache: {str(e)}")
+        return identificacoes
+
+    def atualizar_identificacoes(self, novas_codificacoes):
+        pasta_identificacao = self.pasta_identificacao.get()
+        cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
+        
+        # Carregar identificações existentes
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    identificacoes = pickle.load(f)
+            except Exception as e:
+                self.log(f"Erro ao carregar cache para atualização: {str(e)}")
+                identificacoes = {}
+        else:
+            identificacoes = self.carregar_identificacoes(pasta_identificacao)
+
+        # Atualizar com novas codificações
+        for nome_aluno, codificacoes in novas_codificacoes.items():
+            if nome_aluno in identificacoes:
+                identificacoes[nome_aluno].extend(codificacoes)
+            else:
+                identificacoes[nome_aluno] = codificacoes
+            self.log(f"Atualizado {nome_aluno} com {len(codificacoes)} novas codificações.")
+
+        # Salvar no cache
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(identificacoes, f)
+            self.log("Cache de identificações atualizado com sucesso.")
+        except Exception as e:
+            self.log(f"Erro ao salvar cache atualizado: {str(e)}")
+        
         return identificacoes
 
     def processar_fotos_single(self):
@@ -280,12 +315,18 @@ class SeparadorFotos:
         self.log(f"Total de fotos a processar: {total_fotos}")
         fotos_processadas = 0
         tempo_inicio = time.time()
+        novas_codificacoes = {}  # Coletar novas codificações durante o processamento
 
         for i, foto in enumerate(fotos):
             if self.cancelar:
                 break
-            resultado = self.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, self.cancelar))
+            resultado, codificacoes = self.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, self.cancelar))
             self.log(resultado)
+            if codificacoes:  # Se houver novas codificações
+                for aluno, cods in codificacoes.items():
+                    if aluno not in novas_codificacoes:
+                        novas_codificacoes[aluno] = []
+                    novas_codificacoes[aluno].extend(cods)
 
             fotos_processadas += 1
             percentual = (fotos_processadas / total_fotos) * 100
@@ -301,17 +342,28 @@ class SeparadorFotos:
             if i % 10 == 0 or i == total_fotos - 1:
                 self.root.update_idletasks()
 
+        # Atualizar identificações com as novas codificações coletadas
+        if novas_codificacoes:
+            identificacoes = self.atualizar_identificacoes(novas_codificacoes)
+
         self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
 
     @staticmethod
     def processar_lote(args):
         batch, pasta_saida, identificacoes, tolerancia, cancelar = args
         resultados = []
+        novas_codificacoes = {}
         for foto in batch:
             if cancelar:
                 break
-            resultados.append(SeparadorFotos.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, cancelar)))
-        return resultados
+            resultado, codificacoes = SeparadorFotos.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, cancelar))
+            resultados.append(resultado)
+            if codificacoes:
+                for aluno, cods in codificacoes.items():
+                    if aluno not in novas_codificacoes:
+                        novas_codificacoes[aluno] = []
+                    novas_codificacoes[aluno].extend(cods)
+        return resultados, novas_codificacoes
 
     def processar_fotos_multi(self):
         pasta_fotos = self.pasta_fotos.get()
@@ -342,6 +394,7 @@ class SeparadorFotos:
         tempo_inicio = time.time()
         fotos_processadas = 0
         batch_size = 10
+        novas_codificacoes = {}  # Coletar novas codificações
 
         try:
             with Pool(processes=num_processes) as pool:
@@ -350,13 +403,18 @@ class SeparadorFotos:
                 args = [(batch, pasta_saida, identificacoes, tolerancia, self.cancelar) for batch in batches]
                 resultados = pool.imap(self.processar_lote, args)
 
-                for i, resultado_batch in enumerate(resultados):
+                for i, (resultado_batch, codificacoes_batch) in enumerate(resultados):
                     if self.cancelar:
                         pool.terminate()
                         break
                     for resultado in resultado_batch:
                         self.log(resultado)
                         fotos_processadas += 1
+                    if codificacoes_batch:
+                        for aluno, cods in codificacoes_batch.items():
+                            if aluno not in novas_codificacoes:
+                                novas_codificacoes[aluno] = []
+                            novas_codificacoes[aluno].extend(cods)
                     percentual = (fotos_processadas / total_fotos) * 100
                     tempo_decorrido = time.time() - tempo_inicio
                     tempo_medio = tempo_decorrido / fotos_processadas if fotos_processadas > 0 else 0
@@ -371,6 +429,10 @@ class SeparadorFotos:
                         self.root.update_idletasks()
         except Exception as e:
             self.log(f"Erro no Pool: {str(e)}", atualizar_imediatamente=True)
+
+        # Atualizar identificações com as novas codificações coletadas
+        if novas_codificacoes:
+            identificacoes = self.atualizar_identificacoes(novas_codificacoes)
 
         self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
 
