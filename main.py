@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import separaFotosSingle
 import separaFotosMulti
 import fazerRelatorio
 
@@ -12,12 +11,6 @@ def abrir_fazer_relatorio():
     except Exception as e:
         messagebox.showerror("Erro", f"Falha ao abrir o gerador de relatórios: {str(e)}")
 
-def abrir_separar_fotos():
-    try:
-        separaFotosSingle.janela_separador_fotos(janela_dashboard)
-    except Exception as e:
-        messagebox.showerror("Erro", f"Falha ao abrir separador de fotos: {str(e)}")
-
 def abrir_separar_fotos_multi():
     try:
         separaFotosMulti.janela_separador_fotos_multi(janela_dashboard)
@@ -26,8 +19,8 @@ def abrir_separar_fotos_multi():
 
 # Configuração da janela principal
 janela_dashboard = tk.Tk()
-janela_dashboard.title("SeparooU")
-janela_dashboard.geometry("500x400")
+janela_dashboard.title("SeparaToYou")
+janela_dashboard.geometry("480x350")
 janela_dashboard.configure(bg="#f5f6f5")
 janela_dashboard.resizable(False, False)
 
@@ -43,7 +36,7 @@ frame_principal = ttk.Frame(janela_dashboard, padding="20", style="Transparent.T
 frame_principal.pack(fill="both", expand=True)
 
 # Título e subtítulo
-titulo = ttk.Label(frame_principal, text="SeparooU", font=("Helvetica", 20, "bold"), foreground="#0288D1")
+titulo = ttk.Label(frame_principal, text="SeparaToYou", font=("Helvetica", 20, "bold"), foreground="#0288D1")
 titulo.pack(pady=(20, 0))
 subtitulo = ttk.Label(frame_principal, text="Ferramenta de Separação de Fotos", font=("Helvetica", 10, "italic"), foreground="#666")
 subtitulo.pack(pady=(2, 30))
@@ -53,10 +46,7 @@ frame_botoes = ttk.Frame(frame_principal, style="Transparent.TFrame")
 frame_botoes.pack()
 
 # Botões
-botao_separar_fotos = ttk.Button(frame_botoes, text="Separar Fotos de Alunos", command=abrir_separar_fotos, style="Accent.TButton", width=30)
-botao_separar_fotos.pack(pady=10)
-
-botao_separar_fotos_multi = ttk.Button(frame_botoes, text="Separar Fotos de Alunos Multi", command=abrir_separar_fotos_multi, style="Accent.TButton", width=30)
+botao_separar_fotos_multi = ttk.Button(frame_botoes, text="Separar Fotos de Alunos", command=abrir_separar_fotos_multi, style="Accent.TButton", width=30)
 botao_separar_fotos_multi.pack(pady=10)
 
 botao_relatorio = ttk.Button(frame_botoes, text="Relatório de Alunos", command=abrir_fazer_relatorio, style="Accent.TButton", width=30)
