@@ -8,13 +8,13 @@ import time
 from PIL import Image
 from multiprocessing import Pool, cpu_count
 import threading
-import pickle  # Para 1.1 Cache das Codificações
+import pickle
 
 class SeparadorFotos:
     def __init__(self, root):
         self.root = root
         self.root.title("Separador de Fotos por Reconhecimento Facial")
-        self.root.geometry("740x650")
+        self.root.geometry("740x700")
         self.root.configure(bg="#f5f6f5")
 
         self.pasta_fotos = tk.StringVar()
@@ -23,9 +23,8 @@ class SeparadorFotos:
         self.cancelar = False
         self.processamento_ativo = False
         self.modo_multi = tk.BooleanVar(value=False)
-        self.tolerancia = tk.DoubleVar(value=0.55)  # 2.2 Configuração da Tolerância
+        self.tolerancia = tk.DoubleVar(value=0.55)
 
-        # Estilo ttk
         style = ttk.Style()
         style.configure("TButton", font=("Helvetica", 11), padding=10)
         style.configure("TLabel", background="#f5f6f5", font=("Helvetica", 11))
@@ -33,15 +32,12 @@ class SeparadorFotos:
         style.configure("Transparent.TFrame", background="#f5f6f5")
         style.configure("TProgressbar", thickness=20)
 
-        # Frame principal
         frame_principal = ttk.Frame(self.root, padding="20", style="Transparent.TFrame")
         frame_principal.grid(row=0, column=0, sticky="nsew")
 
-        # Título e subtítulo
         ttk.Label(frame_principal, text="Separador de Fotos", font=("Helvetica", 20, "bold"), foreground="#0288D1").grid(row=0, column=0, columnspan=3, pady=(0, 2))
         ttk.Label(frame_principal, text="Version Alpha 1.0.1 - Single/Multi Processing", font=("Helvetica", 10, "italic"), foreground="#666").grid(row=1, column=0, columnspan=3, pady=(0, 8))
 
-        # Interface
         ttk.Label(frame_principal, text="Pasta com Todas as Fotos:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         ttk.Entry(frame_principal, textvariable=self.pasta_fotos, width=50).grid(row=2, column=1, padx=5, pady=3)
         ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_fotos, style="Accent.TButton").grid(row=2, column=2, padx=5, pady=5)
@@ -54,13 +50,11 @@ class SeparadorFotos:
         ttk.Entry(frame_principal, textvariable=self.pasta_saida, width=50).grid(row=4, column=1, padx=5, pady=3)
         ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_saida, style="Accent.TButton").grid(row=4, column=2, padx=5, pady=5)
 
-        # 2.2 Configuração da Tolerância
         ttk.Label(frame_principal, text="Tolerância de Reconhecimento (0.4-0.6):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
         ttk.Entry(frame_principal, textvariable=self.tolerancia, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
         ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=6, column=0, columnspan=3, pady=5, padx=2, sticky="w")
 
-        # Frame para o texto com barra de rolagem
         texto_frame = ttk.Frame(frame_principal)
         texto_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=10, sticky="nsew")
 
@@ -77,7 +71,6 @@ class SeparadorFotos:
         self.label_progresso = ttk.Label(frame_principal, text="Progresso: 0% | Tempo estimado: --")
         self.label_progresso.grid(row=9, column=0, columnspan=3, pady=8)
 
-        # Frame para botões
         frame_botoes = ttk.Frame(frame_principal, style="Transparent.TFrame")
         frame_botoes.grid(row=10, column=0, columnspan=3, pady=10)
 
@@ -87,10 +80,8 @@ class SeparadorFotos:
         self.botao_cancelar = ttk.Button(frame_botoes, text="Cancelar", command=self.cancelar_processamento, style="Accent.TButton", width=25, state=tk.DISABLED)
         self.botao_cancelar.grid(row=0, column=1, padx=5, pady=8)
 
-        # Rodapé
         ttk.Label(frame_principal, text="© 2025 - Desenvolvido por Alexandre Galhardo", font=("Helvetica", 8), foreground="#999").grid(row=11, column=0, columnspan=3, pady=10)
 
-        # Centralizar janela
         self.root.update_idletasks()
         width = self.root.winfo_width()
         height = self.root.winfo_height()
@@ -119,7 +110,6 @@ class SeparadorFotos:
         if pasta:
             self.pasta_saida.set(pasta)
 
-    # 3.2 Log com Timestamp
     def log(self, mensagem, atualizar_imediatamente=False):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         self.log_texto.insert(tk.END, f"[{timestamp}] {mensagem}\n")
@@ -152,7 +142,6 @@ class SeparadorFotos:
         except Exception as e:
             return face_recognition.load_image_file(caminho), f"Erro ao pré-processar {caminho}: {str(e)}"
 
-    # 3.1 Tratamento de Arquivos Corrompidos e 3.3 Suporte a Múltiplos Rostos
     @staticmethod
     def processar_uma_foto(args):
         foto, pasta_saida, identificacoes, tolerancia, cancelar = args
@@ -162,10 +151,11 @@ class SeparadorFotos:
         pasta_nao_identificadas = os.path.join(pasta_saida, "Fotos Não Identificadas")
         pasta_corrompidas = os.path.join(pasta_saida, "Fotos Corrompidas")
         Path(pasta_corrompidas).mkdir(parents=True, exist_ok=True)
+        Path(pasta_nao_identificadas).mkdir(parents=True, exist_ok=True)
 
         try:
             with Image.open(foto) as img:
-                img.verify()  # Verifica integridade
+                img.verify()
         except Exception as e:
             destino = os.path.join(pasta_corrompidas, os.path.basename(foto))
             shutil.move(foto, destino)
@@ -178,7 +168,7 @@ class SeparadorFotos:
                 shutil.copy(foto, destino)
                 return erro
 
-            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=0)
+            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=1)
 
             if len(codificacoes_desconhecidas) == 0:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
@@ -186,31 +176,40 @@ class SeparadorFotos:
                 return f"Nenhum rosto encontrado em {foto}"
 
             identificados = []
-            for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
-                distancias = face_recognition.face_distance(list(identificacoes.values()), codificacao_desconhecida)
-                menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+            foto_copiada = False
 
-                if menor_distancia <= tolerancia:  # 2.2 Tolerância configurável
-                    indice_melhor = distancias.argmin()
-                    nome_aluno = list(identificacoes.keys())[indice_melhor]
-                    pasta_aluno = os.path.join(pasta_saida, nome_aluno)
+            for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
+                melhor_distancia = float('inf')
+                melhor_aluno = None
+
+                # Comparar com todas as codificações de cada aluno
+                for nome_aluno, codificacoes_aluno in identificacoes.items():
+                    distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
+                    menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+                    if menor_distancia < melhor_distancia:
+                        melhor_distancia = menor_distancia
+                        melhor_aluno = nome_aluno
+
+                if melhor_distancia <= tolerancia:
+                    pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
                     Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
                     destino = os.path.join(pasta_aluno, os.path.basename(foto))
                     shutil.copy(foto, destino)
-                    identificados.append(f"Rosto {j+1} identificado como {nome_aluno} (distância: {menor_distancia:.2f})")
+                    foto_copiada = True
+                    identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
 
-            if identificados:
-                return "; ".join(identificados)
-            else:
+            if not identificados:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
                 return f"Foto {foto} movida para Não Identificadas"
+            
+            return "; ".join(identificados) if identificados else f"Foto {foto} movida para Não Identificadas"
+
         except Exception as e:
             destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
             shutil.copy(foto, destino)
             return f"Erro ao processar {foto}: {str(e)}"
 
-    # 1.1 Cache das Codificações de Identificação
     def carregar_identificacoes(self, pasta_identificacao):
         cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
         if os.path.exists(cache_file):
@@ -227,7 +226,6 @@ class SeparadorFotos:
             if self.cancelar:
                 break
             caminho = os.path.join(pasta_identificacao, arquivo)
-            # 4.1 Suporte a Outros Formatos
             if not os.path.isfile(caminho) or not arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff')):
                 continue
             try:
@@ -236,18 +234,18 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=0)
+                # Aumentar num_jitters para capturar mais variações
+                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=5)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
-                codificacao = codificacoes[0]
                 nome_aluno = os.path.splitext(arquivo)[0]
-                identificacoes[nome_aluno] = codificacao
-                self.log(f"Carregada identificação de {nome_aluno}")
+                # Armazenar todas as codificações do aluno como uma lista
+                identificacoes[nome_aluno] = codificacoes
+                self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
             except Exception as e:
                 self.log(f"Erro ao carregar {arquivo}: {str(e)}")
 
-        # Salvar no cache
         try:
             with open(cache_file, 'wb') as f:
                 pickle.dump(identificacoes, f)
@@ -260,7 +258,7 @@ class SeparadorFotos:
         pasta_fotos = self.pasta_fotos.get()
         pasta_identificacao = self.pasta_identificacao.get()
         pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()  # 2.2 Tolerância configurável
+        tolerancia = self.tolerancia.get()
 
         if not (pasta_fotos and pasta_identificacao and pasta_saida):
             self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
@@ -276,7 +274,6 @@ class SeparadorFotos:
         self.log("Iniciando processamento (Single-Processing)...", atualizar_imediatamente=True)
 
         identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        # 4.1 Suporte a Outros Formatos
         fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
                  for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
         total_fotos = len(fotos)
@@ -306,7 +303,6 @@ class SeparadorFotos:
 
         self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
 
-    # 1.3 Batch Processing no Multi-Processing
     @staticmethod
     def processar_lote(args):
         batch, pasta_saida, identificacoes, tolerancia, cancelar = args
@@ -317,12 +313,11 @@ class SeparadorFotos:
             resultados.append(SeparadorFotos.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, cancelar)))
         return resultados
 
-    # 1.2 Ajuste Dinâmico do Número de Processos e 1.3 Batch Processing
     def processar_fotos_multi(self):
         pasta_fotos = self.pasta_fotos.get()
         pasta_identificacao = self.pasta_identificacao.get()
         pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()  # 2.2 Tolerância configurável
+        tolerancia = self.tolerancia.get()
 
         if not (pasta_fotos and pasta_identificacao and pasta_saida):
             self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
@@ -338,17 +333,15 @@ class SeparadorFotos:
         self.log("Iniciando processamento (Multi-Processing)...", atualizar_imediatamente=True)
 
         identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        # 4.1 Suporte a Outros Formatos
         fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
                  for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
         total_fotos = len(fotos)
         self.log(f"Total de fotos a processar: {total_fotos}")
 
-        # 1.2 Ajuste Dinâmico do Número de Processos
         num_processes = min(int(cpu_count() * 0.8), max(1, total_fotos // 10))
         tempo_inicio = time.time()
         fotos_processadas = 0
-        batch_size = 10  # Tamanho do lote para batch processing
+        batch_size = 10
 
         try:
             with Pool(processes=num_processes) as pool:
@@ -411,5 +404,5 @@ class SeparadorFotos:
 def janela_separador_fotos_multi(parent):
     janela = tk.Toplevel(parent)
     janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
-    janela.geometry("740x650")
+    janela.geometry("740x700")
     app = SeparadorFotos(janela)
