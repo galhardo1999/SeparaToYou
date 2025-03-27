@@ -1,3 +1,4 @@
+import face_recognition
 import os
 import shutil
 from pathlib import Path
