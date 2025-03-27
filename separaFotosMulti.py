@@ -3,406 +3,237 @@ import os
 import shutil
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import time
+from tkinter import filedialog, messagebox
 from PIL import Image
-from multiprocessing import Pool, cpu_count
 import threading
-import pickle
+import queue
+import time
 
-class SeparadorFotos:
+class PhotoSeparator:
     def __init__(self, root):
         self.root = root
-        self.root.title("Separador de Fotos por Reconhecimento Facial")
-        self.root.geometry("740x700")
-        self.root.configure(bg="#f5f6f5")
+        self.root.title("Separador de Fotos - Alternativo")
+        self.root.geometry("600x400")
+        self.root.configure(bg="#e8ecef")
 
-        self.pasta_fotos = tk.StringVar()
-        self.pasta_identificacao = tk.StringVar()
-        self.pasta_saida = tk.StringVar()
-        self.cancelar = False
-        self.processamento_ativo = False
-        self.modo_multi = tk.BooleanVar(value=False)
-        self.tolerancia = tk.DoubleVar(value=0.55)
+        # Variáveis
+        self.photos_folder = tk.StringVar()
+        self.identify_folder = tk.StringVar()
+        self.output_folder = tk.StringVar()
+        self.running = False
+        self.tolerance = 0.55  # Tolerância fixa para simplificar
+        self.task_queue = queue.Queue()
+        self.processed_count = 0
 
-        style = ttk.Style()
-        style.configure("TButton", font=("Helvetica", 11), padding=10)
-        style.configure("TLabel", background="#f5f6f5", font=("Helvetica", 11))
-        style.configure("Accent.TButton", background="#ADD8E6", foreground="black", font=("Helvetica", 11), padding=(10, 2))
-        style.configure("Transparent.TFrame", background="#f5f6f5")
-        style.configure("TProgressbar", thickness=20)
+        # Interface
+        tk.Label(root, text="Separador de Fotos", font=("Arial", 16, "bold"), bg="#e8ecef").pack(pady=10)
 
-        frame_principal = ttk.Frame(self.root, padding="20", style="Transparent.TFrame")
-        frame_principal.grid(row=0, column=0, sticky="nsew")
+        tk.Label(root, text="Pasta com Fotos:", bg="#e8ecef").pack()
+        tk.Entry(root, textvariable=self.photos_folder, width=50).pack()
+        tk.Button(root, text="Selecionar", command=self.select_photos_folder).pack(pady=5)
 
-        ttk.Label(frame_principal, text="Separador de Fotos", font=("Helvetica", 20, "bold"), foreground="#0288D1").grid(row=0, column=0, columnspan=3, pady=(0, 2))
-        ttk.Label(frame_principal, text="Version Alpha 1.0.1 - Single/Multi Processing", font=("Helvetica", 10, "italic"), foreground="#666").grid(row=1, column=0, columnspan=3, pady=(0, 8))
+        tk.Label(root, text="Pasta de Identificação:", bg="#e8ecef").pack()
+        tk.Entry(root, textvariable=self.identify_folder, width=50).pack()
+        tk.Button(root, text="Selecionar", command=self.select_identify_folder).pack(pady=5)
 
-        ttk.Label(frame_principal, text="Pasta com Todas as Fotos:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        ttk.Entry(frame_principal, textvariable=self.pasta_fotos, width=50).grid(row=2, column=1, padx=5, pady=3)
-        ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_fotos, style="Accent.TButton").grid(row=2, column=2, padx=5, pady=5)
+        tk.Label(root, text="Pasta de Saída:", bg="#e8ecef").pack()
+        tk.Entry(root, textvariable=self.output_folder, width=50).pack()
+        tk.Button(root, text="Selecionar", command=self.select_output_folder).pack(pady=5)
 
-        ttk.Label(frame_principal, text="Pasta de Identificação dos Alunos:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        ttk.Entry(frame_principal, textvariable=self.pasta_identificacao, width=50).grid(row=3, column=1, padx=5, pady=3)
-        ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_identificacao, style="Accent.TButton").grid(row=3, column=2, padx=5, pady=5)
+        self.start_button = tk.Button(root, text="Iniciar", command=self.start_processing)
+        self.start_button.pack(pady=10)
 
-        ttk.Label(frame_principal, text="Pasta de Saída:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
-        ttk.Entry(frame_principal, textvariable=self.pasta_saida, width=50).grid(row=4, column=1, padx=5, pady=3)
-        ttk.Button(frame_principal, text="Selecionar", command=self.selecionar_pasta_saida, style="Accent.TButton").grid(row=4, column=2, padx=5, pady=5)
+        self.cancel_button = tk.Button(root, text="Cancelar", command=self.cancel_processing, state=tk.DISABLED)
+        self.cancel_button.pack(pady=5)
 
-        ttk.Label(frame_principal, text="Tolerância de Reconhecimento (0.4-0.6):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
-        ttk.Entry(frame_principal, textvariable=self.tolerancia, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
+        self.status_label = tk.Label(root, text="Pronto", bg="#e8ecef")
+        self.status_label.pack(pady=10)
 
-        ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=6, column=0, columnspan=3, pady=5, padx=2, sticky="w")
-
-        texto_frame = ttk.Frame(frame_principal)
-        texto_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=10, sticky="nsew")
-
-        self.log_texto = tk.Text(texto_frame, height=15, width=97, font=("Helvetica", 10))
-        self.log_texto.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(texto_frame, orient="vertical", command=self.log_texto.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.log_texto.configure(yscrollcommand=scrollbar.set)
-
-        self.progresso = ttk.Progressbar(frame_principal, length=650, mode='determinate')
-        self.progresso.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
-
-        self.label_progresso = ttk.Label(frame_principal, text="Progresso: 0% | Tempo estimado: --")
-        self.label_progresso.grid(row=9, column=0, columnspan=3, pady=8)
-
-        frame_botoes = ttk.Frame(frame_principal, style="Transparent.TFrame")
-        frame_botoes.grid(row=10, column=0, columnspan=3, pady=10)
-
-        self.botao_iniciar = ttk.Button(frame_botoes, text="Iniciar Processamento", command=self.iniciar_processamento, style="Accent.TButton", width=25)
-        self.botao_iniciar.grid(row=0, column=0, padx=5, pady=8)
-
-        self.botao_cancelar = ttk.Button(frame_botoes, text="Cancelar", command=self.cancelar_processamento, style="Accent.TButton", width=25, state=tk.DISABLED)
-        self.botao_cancelar.grid(row=0, column=1, padx=5, pady=8)
-
-        ttk.Label(frame_principal, text="© 2025 - Desenvolvido por Alexandre Galhardo", font=("Helvetica", 8), foreground="#999").grid(row=11, column=0, columnspan=3, pady=10)
-
+        # Centralizar janela
         self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
+        width, height = self.root.winfo_width(), self.root.winfo_height()
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
-        self.root.protocol("WM_DELETE_WINDOW", self.fechar_janela)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def fechar_janela(self):
-        self.cancelar = True
+    def select_photos_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.photos_folder.set(folder)
+
+    def select_identify_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.identify_folder.set(folder)
+
+    def select_output_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.output_folder.set(folder)
+
+    def update_status(self, message):
+        self.status_label.config(text=message)
+        self.root.update_idletasks()
+
+    def on_closing(self):
+        self.running = False
         self.root.destroy()
 
-    def selecionar_pasta_fotos(self):
-        pasta = filedialog.askdirectory()
-        if pasta:
-            self.pasta_fotos.set(pasta)
-
-    def selecionar_pasta_identificacao(self):
-        pasta = filedialog.askdirectory()
-        if pasta:
-            self.pasta_identificacao.set(pasta)
-
-    def selecionar_pasta_saida(self):
-        pasta = filedialog.askdirectory()
-        if pasta:
-            self.pasta_saida.set(pasta)
-
-    def log(self, mensagem, atualizar_imediatamente=False):
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.log_texto.insert(tk.END, f"[{timestamp}] {mensagem}\n")
-        self.log_texto.see(tk.END)
-        if atualizar_imediatamente:
-            self.root.update_idletasks()
-
-    def atualizar_progresso(self, percentual, tempo_str):
-        self.progresso.configure(value=percentual)
-        self.label_progresso.config(text=f"Progresso: {percentual:.1f}% | Tempo estimado: {tempo_str}")
-
-    def cancelar_processamento(self):
-        self.cancelar = True
-        self.log("Cancelamento solicitado...")
-
-    @staticmethod
-    def preprocessar_imagem(caminho):
-        try:
-            imagem = Image.open(caminho).convert('RGB')
-            largura_max = 500
-            if imagem.width > largura_max:
-                proporcao = largura_max / imagem.width
-                nova_altura = int(imagem.height * proporcao)
-                imagem = imagem.resize((largura_max, nova_altura), Image.Resampling.LANCZOS)
-            caminho_temp = caminho + "_temp.jpg"
-            imagem.save(caminho_temp)
-            imagem_processada = face_recognition.load_image_file(caminho_temp)
-            os.remove(caminho_temp)
-            return imagem_processada, None
-        except Exception as e:
-            return face_recognition.load_image_file(caminho), f"Erro ao pré-processar {caminho}: {str(e)}"
-
-    @staticmethod
-    def processar_uma_foto(args):
-        foto, pasta_saida, identificacoes, tolerancia, cancelar = args
-        if cancelar:
-            return f"Cancelado: {foto}"
-
-        pasta_nao_identificadas = os.path.join(pasta_saida, "Fotos Não Identificadas")
-        pasta_corrompidas = os.path.join(pasta_saida, "Fotos Corrompidas")
-        Path(pasta_corrompidas).mkdir(parents=True, exist_ok=True)
-        Path(pasta_nao_identificadas).mkdir(parents=True, exist_ok=True)
-
-        try:
-            with Image.open(foto) as img:
-                img.verify()
-        except Exception as e:
-            destino = os.path.join(pasta_corrompidas, os.path.basename(foto))
-            shutil.move(foto, destino)
-            return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas"
-
-        try:
-            imagem_desconhecida, erro = SeparadorFotos.preprocessar_imagem(foto)
-            if erro:
-                destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
-                shutil.copy(foto, destino)
-                return erro
-
-            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=1)
-
-            if len(codificacoes_desconhecidas) == 0:
-                destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
-                shutil.copy(foto, destino)
-                return f"Nenhum rosto encontrado em {foto}"
-
-            identificados = []
-            foto_copiada = False
-
-            for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
-                melhor_distancia = float('inf')
-                melhor_aluno = None
-
-                # Comparar com todas as codificações de cada aluno
-                for nome_aluno, codificacoes_aluno in identificacoes.items():
-                    distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
-                    menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
-                    if menor_distancia < melhor_distancia:
-                        melhor_distancia = menor_distancia
-                        melhor_aluno = nome_aluno
-
-                if melhor_distancia <= tolerancia:
-                    pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
-                    Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
-                    destino = os.path.join(pasta_aluno, os.path.basename(foto))
-                    shutil.copy(foto, destino)
-                    foto_copiada = True
-                    identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
-
-            if not identificados:
-                destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
-                shutil.copy(foto, destino)
-                return f"Foto {foto} movida para Não Identificadas"
-            
-            return "; ".join(identificados) if identificados else f"Foto {foto} movida para Não Identificadas"
-
-        except Exception as e:
-            destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
-            shutil.copy(foto, destino)
-            return f"Erro ao processar {foto}: {str(e)}"
-
-    def carregar_identificacoes(self, pasta_identificacao):
-        cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, 'rb') as f:
-                    identificacoes = pickle.load(f)
-                self.log("Identificações carregadas do cache.")
-                return identificacoes
-            except Exception as e:
-                self.log(f"Erro ao carregar cache: {str(e)}. Recalculando identificações...")
-
-        identificacoes = {}
-        for arquivo in os.listdir(pasta_identificacao):
-            if self.cancelar:
-                break
-            caminho = os.path.join(pasta_identificacao, arquivo)
-            if not os.path.isfile(caminho) or not arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff')):
+    def load_identifications(self, folder):
+        """Carrega as codificações faciais das imagens de identificação."""
+        identifications = {}
+        for file in os.listdir(folder):
+            if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
                 continue
+            path = os.path.join(folder, file)
             try:
-                Image.open(caminho).verify()
-                imagem, erro = self.preprocessar_imagem(caminho)
-                if erro:
-                    self.log(erro)
-                    continue
-                # Aumentar num_jitters para capturar mais variações
-                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
-                if not codificacoes:
-                    self.log(f"Nenhum rosto encontrado em {arquivo}")
-                    continue
-                nome_aluno = os.path.splitext(arquivo)[0]
-                # Armazenar todas as codificações do aluno como uma lista
-                identificacoes[nome_aluno] = codificacoes
-                self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
+                image = face_recognition.load_image_file(path)
+                encodings = face_recognition.face_encodings(image, model="small")
+                if encodings:
+                    name = os.path.splitext(file)[0]
+                    identifications[name] = encodings[0]  # Usa apenas a primeira codificação por simplicidade
+                    self.update_status(f"Carregado: {name}")
+                else:
+                    self.update_status(f"Sem rosto em: {file}")
             except Exception as e:
-                self.log(f"Erro ao carregar {arquivo}: {str(e)}")
+                self.update_status(f"Erro em {file}: {str(e)}")
+        return identifications
 
+    def process_photo(self, photo_path, output_folder, identifications):
+        """Processa uma única foto e a move para a pasta apropriada."""
         try:
-            with open(cache_file, 'wb') as f:
-                pickle.dump(identificacoes, f)
-            self.log("Identificações salvas no cache.")
+            with Image.open(photo_path) as img:
+                img.verify()  # Verifica se a imagem é válida
+            image = face_recognition.load_image_file(photo_path)
+            encodings = face_recognition.face_encodings(image, model="small")
+
+            if not encodings:
+                self.move_to_unidentified(photo_path, output_folder)
+                return f"Nenhum rosto em {os.path.basename(photo_path)}"
+
+            encoding = encodings[0]  # Usa o primeiro rosto detectado
+            best_match = None
+            best_distance = float('inf')
+
+            for name, known_encoding in identifications.items():
+                distance = face_recognition.face_distance([known_encoding], encoding)[0]
+                if distance < best_distance:
+                    best_distance = distance
+                    best_match = name
+
+            if best_distance <= self.tolerance:
+                self.move_to_person_folder(photo_path, output_folder, best_match)
+                return f"Identificado {best_match} em {os.path.basename(photo_path)} (distância: {best_distance:.2f})"
+            else:
+                self.move_to_unidentified(photo_path, output_folder)
+                return f"Não identificado: {os.path.basename(photo_path)}"
         except Exception as e:
-            self.log(f"Erro ao salvar cache: {str(e)}")
-        return identificacoes
+            self.move_to_corrupted(photo_path, output_folder)
+            return f"Foto corrompida: {os.path.basename(photo_path)} - {str(e)}"
 
-    def processar_fotos_single(self):
-        pasta_fotos = self.pasta_fotos.get()
-        pasta_identificacao = self.pasta_identificacao.get()
-        pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()
+    def move_to_person_folder(self, photo_path, output_folder, person_name):
+        """Move a foto para a pasta da pessoa identificada."""
+        person_dir = os.path.join(output_folder, person_name)
+        Path(person_dir).mkdir(parents=True, exist_ok=True)
+        shutil.copy(photo_path, os.path.join(person_dir, os.path.basename(photo_path)))
 
-        if not (pasta_fotos and pasta_identificacao and pasta_saida):
-            self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
+    def move_to_unidentified(self, photo_path, output_folder):
+        """Move a foto para a pasta de não identificados."""
+        unidentified_dir = os.path.join(output_folder, "Não Identificados")
+        Path(unidentified_dir).mkdir(parents=True, exist_ok=True)
+        shutil.copy(photo_path, os.path.join(unidentified_dir, os.path.basename(photo_path)))
+
+    def move_to_corrupted(self, photo_path, output_folder):
+        """Move a foto para a pasta de corrompidos."""
+        corrupted_dir = os.path.join(output_folder, "Corrompidos")
+        Path(corrupted_dir).mkdir(parents=True, exist_ok=True)
+        shutil.copy(photo_path, os.path.join(corrupted_dir, os.path.basename(photo_path)))
+
+    def process_photos(self):
+        """Processa todas as fotos em uma thread separada usando uma fila de tarefas."""
+        photos_folder = self.photos_folder.get()
+        identify_folder = self.identify_folder.get()
+        output_folder = self.output_folder.get()
+
+        if not (photos_folder and identify_folder and output_folder):
+            messagebox.showerror("Erro", "Selecione todas as pastas!")
             return
 
-        self.cancelar = False
-        self.processamento_ativo = True
-        self.root.after(0, lambda: self.botao_iniciar.config(state=tk.DISABLED))
-        self.root.after(0, lambda: self.botao_cancelar.config(state=tk.NORMAL))
-        Path(pasta_saida).mkdir(parents=True, exist_ok=True)
-        Path(os.path.join(pasta_saida, "Fotos Não Identificadas")).mkdir(parents=True, exist_ok=True)
+        self.running = True
+        self.start_button.config(state=tk.DISABLED)
+        self.cancel_button.config(state=tk.NORMAL)
 
-        self.log("Iniciando processamento (Single-Processing)...", atualizar_imediatamente=True)
-
-        identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
-                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
-        total_fotos = len(fotos)
-        self.log(f"Total de fotos a processar: {total_fotos}")
-        fotos_processadas = 0
-        tempo_inicio = time.time()
-
-        for i, foto in enumerate(fotos):
-            if self.cancelar:
-                break
-            resultado = self.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, self.cancelar))
-            self.log(resultado)
-
-            fotos_processadas += 1
-            percentual = (fotos_processadas / total_fotos) * 100
-            tempo_decorrido = time.time() - tempo_inicio
-            tempo_medio = tempo_decorrido / fotos_processadas if fotos_processadas > 0 else 0
-            fotos_restantes = total_fotos - fotos_processadas
-            tempo_estimado = tempo_medio * fotos_restantes
-            minutos = int(tempo_estimado // 60)
-            segundos = int(tempo_estimado % 60)
-            tempo_str = f"{minutos}m {segundos}s"
-            self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
-
-            if i % 10 == 0 or i == total_fotos - 1:
-                self.root.update_idletasks()
-
-        self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
-
-    @staticmethod
-    def processar_lote(args):
-        batch, pasta_saida, identificacoes, tolerancia, cancelar = args
-        resultados = []
-        for foto in batch:
-            if cancelar:
-                break
-            resultados.append(SeparadorFotos.processar_uma_foto((foto, pasta_saida, identificacoes, tolerancia, cancelar)))
-        return resultados
-
-    def processar_fotos_multi(self):
-        pasta_fotos = self.pasta_fotos.get()
-        pasta_identificacao = self.pasta_identificacao.get()
-        pasta_saida = self.pasta_saida.get()
-        tolerancia = self.tolerancia.get()
-
-        if not (pasta_fotos and pasta_identificacao and pasta_saida):
-            self.root.after(0, lambda: messagebox.showerror("Erro", "Por favor, selecione todas as pastas!"))
+        # Carrega identificações
+        self.update_status("Carregando identificações...")
+        identifications = self.load_identifications(identify_folder)
+        if not identifications:
+            messagebox.showerror("Erro", "Nenhuma identificação válida encontrada!")
+            self.reset_ui()
             return
 
-        self.cancelar = False
-        self.processamento_ativo = True
-        self.root.after(0, lambda: self.botao_iniciar.config(state=tk.DISABLED))
-        self.root.after(0, lambda: self.botao_cancelar.config(state=tk.NORMAL))
-        Path(pasta_saida).mkdir(parents=True, exist_ok=True)
-        Path(os.path.join(pasta_saida, "Fotos Não Identificadas")).mkdir(parents=True, exist_ok=True)
+        # Coleta todas as fotos
+        photos = [os.path.join(root, file) for root, _, files in os.walk(photos_folder)
+                  for file in files if file.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        total_photos = len(photos)
+        self.processed_count = 0
 
-        self.log("Iniciando processamento (Multi-Processing)...", atualizar_imediatamente=True)
+        if total_photos == 0:
+            messagebox.showinfo("Aviso", "Nenhuma foto encontrada!")
+            self.reset_ui()
+            return
 
-        identificacoes = self.carregar_identificacoes(pasta_identificacao)
-        fotos = [os.path.join(raiz, arquivo) for raiz, _, arquivos in os.walk(pasta_fotos) 
-                 for arquivo in arquivos if arquivo.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
-        total_fotos = len(fotos)
-        self.log(f"Total de fotos a processar: {total_fotos}")
+        # Adiciona tarefas à fila
+        for photo in photos:
+            self.task_queue.put((photo, output_folder, identifications))
 
-        num_processes = min(int(cpu_count() * 0.8), max(1, total_fotos // 10))
-        tempo_inicio = time.time()
-        fotos_processadas = 0
-        batch_size = 10
+        start_time = time.time()
+        self.update_status(f"Processando 0/{total_photos} fotos...")
 
-        try:
-            with Pool(processes=num_processes) as pool:
-                self.log(f"Pool de processos iniciado com {num_processes} processos.", atualizar_imediatamente=True)
-                batches = [fotos[i:i + batch_size] for i in range(0, len(fotos), batch_size)]
-                args = [(batch, pasta_saida, identificacoes, tolerancia, self.cancelar) for batch in batches]
-                resultados = pool.imap(self.processar_lote, args)
+        def worker():
+            while self.running and not self.task_queue.empty():
+                try:
+                    photo, out_folder, ids = self.task_queue.get(timeout=1)
+                    result = self.process_photo(photo, out_folder, ids)
+                    self.processed_count += 1
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / self.processed_count if self.processed_count > 0 else 0
+                    remaining = (total_photos - self.processed_count) * avg_time
+                    self.update_status(
+                        f"Processando {self.processed_count}/{total_photos} - {result} - Restante: {int(remaining)}s"
+                    )
+                except queue.Empty:
+                    break
+                finally:
+                    self.task_queue.task_done()
 
-                for i, resultado_batch in enumerate(resultados):
-                    if self.cancelar:
-                        pool.terminate()
-                        break
-                    for resultado in resultado_batch:
-                        self.log(resultado)
-                        fotos_processadas += 1
-                    percentual = (fotos_processadas / total_fotos) * 100
-                    tempo_decorrido = time.time() - tempo_inicio
-                    tempo_medio = tempo_decorrido / fotos_processadas if fotos_processadas > 0 else 0
-                    fotos_restantes = total_fotos - fotos_processadas
-                    tempo_estimado = tempo_medio * fotos_restantes
-                    minutos = int(tempo_estimado // 60)
-                    segundos = int(tempo_estimado % 60)
-                    tempo_str = f"{minutos}m {segundos}s"
-                    self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
+            if self.running:
+                total_time = time.time() - start_time
+                self.update_status(f"Concluído! Processadas {self.processed_count}/{total_photos} fotos em {int(total_time)}s")
+                messagebox.showinfo("Sucesso", "Processamento concluído!")
+            else:
+                self.update_status("Processamento cancelado.")
+                messagebox.showinfo("Cancelado", "Processamento foi interrompido.")
+            self.reset_ui()
 
-                    if i % 10 == 0 or i == len(batches) - 1:
-                        self.root.update_idletasks()
-        except Exception as e:
-            self.log(f"Erro no Pool: {str(e)}", atualizar_imediatamente=True)
+        # Inicia o processamento em uma thread
+        threading.Thread(target=worker, daemon=True).start()
 
-        self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
+    def start_processing(self):
+        if not self.running:
+            threading.Thread(target=self.process_photos, daemon=True).start()
 
-    def finalizar_processamento(self, total_fotos, fotos_processadas, tempo_inicio):
-        self.processamento_ativo = False
-        if self.cancelar:
-            self.log("Processamento cancelado.", atualizar_imediatamente=True)
-            self.root.after(0, lambda: messagebox.showinfo("Cancelado", "O processamento foi interrompido."))
-        else:
-            tempo_total = time.time() - tempo_inicio
-            minutos = int(tempo_total // 60)
-            segundos = int(tempo_total % 60)
-            self.log(f"Processamento concluído! Total de fotos processadas: {fotos_processadas}/{total_fotos}", atualizar_imediatamente=True)
-            self.log(f"Tempo total: {minutos}m {segundos}s", atualizar_imediatamente=True)
-            self.root.after(0, lambda: messagebox.showinfo("Concluído", "O processamento das fotos foi finalizado."))
+    def cancel_processing(self):
+        self.running = False
+        self.cancel_button.config(state=tk.DISABLED)
 
-        self.root.after(0, lambda: self.botao_iniciar.config(state=tk.NORMAL))
-        self.root.after(0, lambda: self.botao_cancelar.config(state=tk.DISABLED))
-        self.root.after(0, lambda: self.progresso.configure(value=0))
-        self.root.after(0, lambda: self.label_progresso.config(text="Progresso: 0% | Tempo estimado: --"))
+    def reset_ui(self):
+        self.running = False
+        self.start_button.config(state=tk.NORMAL)
+        self.cancel_button.config(state=tk.DISABLED)
 
-    def iniciar_processamento(self):
-        if not self.processamento_ativo:
-            try:
-                thread = threading.Thread(target=self.processar_fotos_multi if self.modo_multi.get() else self.processar_fotos_single)
-                thread.start()
-            except Exception as e:
-                self.log(f"Erro ao iniciar processamento: {str(e)}", atualizar_imediatamente=True)
-                self.root.after(0, lambda: messagebox.showerror("Erro", f"Falha ao iniciar: {str(e)}"))
-
-def janela_separador_fotos_multi(parent):
-    janela = tk.Toplevel(parent)
-    janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
-    janela.geometry("740x700")
-    app = SeparadorFotos(janela)
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PhotoSeparator(root)
+    root.mainloop()
