@@ -1,4 +1,3 @@
-import face_recognition
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import separaFotosMulti
@@ -6,7 +5,7 @@ import fazerRelatorio
 import requests
 import sys
 import ttkbootstrap as ttk
-#pyinstaller --onefile --windowed --add-data "C:\Users\Apolo\AppData\Roaming\Python\Python313\site-packages\face_recognition_models\models;face_recognition_models/models" main-login.py
+
 API_URL = "http://127.0.0.1:5000/api/verificar-premium-login"
 
 class LoginWindow:
@@ -52,30 +51,40 @@ class LoginWindow:
         if not email or not senha:
             messagebox.showerror("Erro", "Por favor, preencha todos os campos.")
             return
-
+    
         try:
+            print(f"Tentando fazer login com email: {email}, senha: {senha}")
             response = requests.post(API_URL, json={"email": email, "senha": senha}, timeout=5)
+            print(f"Resposta do servidor: status={response.status_code}, corpo={response.text}")
+
             if response.status_code == 200:
                 data = response.json()
+                print(f"Dados recebidos: {data}")
                 if data.get("premium"):
-                    self.root.destroy()
+                    print("Login bem-sucedido! Escondendo janela de login...")
+                    self.root.withdraw()
+                    print("Janela de login escondida. Chamando callback...")
                     self.callback()
                 else:
+                    print("Acesso negado: usuário não é premium.")
                     messagebox.showerror("Erro", "Acesso negado. Você precisa de um plano premium.")
                     sys.exit(1)
             else:
-                messagebox.showerror("Erro", "Credenciais inválidas. Verifique seu e-mail e senha.")
+                messagebox.showerror("Erro", f"Email ou senha estão incorretas.")
         except requests.RequestException as e:
-            messagebox.showerror("Erro", f"Erro ao conectar ao servidor: {e}")
-            sys.exit(1)
+            messagebox.showerror("Erro", f"Erro ao conectar ao servidor: {str(e)}")
+        finally:
+            self.login_button.config(state="normal")
+            self.root.update()
 
 class DashboardWindow:
     def __init__(self):
-        self.janela_dashboard = tk.Tk()
-        self.janela_dashboard.title("SeparaToYou")
-        self.janela_dashboard.geometry("480x350")
-        self.janela_dashboard.configure(bg="#f5f6f5")
-        self.janela_dashboard.resizable(False, False)
+        # Cria uma nova janela para o dashboard
+        self.root = tk.Tk()
+        self.root.title("SeparaToYou")
+        self.root.geometry("480x350")
+        self.root.configure(bg="#f5f6f5")
+        self.root.resizable(False, False)
 
         style = ttk.Style()
         style.configure("TButton", font=("Helvetica", 11), padding=10)
@@ -83,7 +92,7 @@ class DashboardWindow:
         style.configure("Accent.TButton", background="#ADD8E6", foreground="black")
         style.configure("Transparent.TFrame", background="#f5f6f5")
 
-        frame_principal = ttk.Frame(self.janela_dashboard, padding="20", style="Transparent.TFrame")
+        frame_principal = ttk.Frame(self.root, padding="20", style="Transparent.TFrame")
         frame_principal.pack(fill="both", expand=True)
 
         titulo = ttk.Label(frame_principal, text="SeparaToYou", font=("Helvetica", 20, "bold"), foreground="#0288D1")
@@ -103,33 +112,35 @@ class DashboardWindow:
         rodape = ttk.Label(frame_principal, text="© 2025 - Desenvolvido por Alexandre Galhardo", font=("Helvetica", 8), foreground="#999")
         rodape.pack(side="bottom", pady=10)
 
-        self.janela_dashboard.update_idletasks()
-        width = self.janela_dashboard.winfo_width()
-        height = self.janela_dashboard.winfo_height()
-        x = (self.janela_dashboard.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.janela_dashboard.winfo_screenheight() // 2) - (height // 2)
-        self.janela_dashboard.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
 
-        self.janela_dashboard.protocol("WM_DELETE_WINDOW", self.janela_dashboard.quit)
+        self.root.protocol("WM_DELETE_WINDOW", self.root.destroy)
 
     def abrir_fazer_relatorio(self):
         try:
-            janela_relatorio = tk.Toplevel(self.janela_dashboard)
+            janela_relatorio = tk.Toplevel(self.root)
             app = fazerRelatorio.GeradorRelatorioComparativo(janela_relatorio)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao abrir o gerador de relatórios: {str(e)}")
 
     def abrir_separar_fotos_multi(self):
         try:
-            separaFotosMulti.janela_separador_fotos_multi(self.janela_dashboard)
+            separaFotosMulti.janela_separador_fotos_multi(self.root)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao abrir separador de fotos: {str(e)}")
 
     def run(self):
-        self.janela_dashboard.mainloop()
+        self.root.mainloop()
 
 def main():
+    # Cria a janela de login
     root = tk.Tk()
+    # Passa um callback que cria e executa a DashboardWindow
     login_app = LoginWindow(root, lambda: DashboardWindow().run())
     root.mainloop()
 
