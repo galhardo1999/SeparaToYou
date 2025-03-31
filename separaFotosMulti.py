@@ -53,7 +53,7 @@ class SeparadorFotos:
         ttk.Label(frame_principal, text="Tolerância de Reconhecimento (0.4-0.6):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
         ttk.Entry(frame_principal, textvariable=self.tolerancia, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Checkbutton(frame_principal, text=" Multi-Processing. (Usar essa opção se o computador tiver mais de 2 Nucleos.)", variable=self.modo_multi).grid(row=6, column=0, columnspan=3, pady=5, padx=2, sticky="w")
+        ttk.Checkbutton(frame_principal, text=" Multi-Processing (Usar se o computador tiver mais de 2 núcleos)", variable=self.modo_multi).grid(row=6, column=0, columnspan=3, pady=5, padx=2, sticky="w")
 
         texto_frame = ttk.Frame(frame_principal)
         texto_frame.grid(row=7, column=0, columnspan=3, padx=5, pady=10, sticky="nsew")
@@ -135,12 +135,12 @@ class SeparadorFotos:
                 nova_altura = int(imagem.height * proporcao)
                 imagem = imagem.resize((largura_max, nova_altura), Image.Resampling.LANCZOS)
             caminho_temp = caminho + "_temp.jpg"
-            imagem.save(caminho_temp)
+            imagem.save(caminho_temp, quality=95)
             imagem_processada = face_recognition.load_image_file(caminho_temp)
             os.remove(caminho_temp)
             return imagem_processada, None
         except Exception as e:
-            return face_recognition.load_image_file(caminho), f"Erro ao pré-processar {caminho}: {str(e)}"
+            return face_recognition.load_image_file(caminho), f"Erro ao pré-processar {caminho}: {str(e)} - Tipo: {type(e).__name__}"
 
     @staticmethod
     def processar_uma_foto(args):
@@ -158,8 +158,11 @@ class SeparadorFotos:
                 img.verify()
         except Exception as e:
             destino = os.path.join(pasta_corrompidas, os.path.basename(foto))
-            shutil.move(foto, destino)
-            return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas"
+            try:
+                shutil.move(foto, destino)
+                return f"Arquivo corrompido: {foto} movido para Fotos Corrompidas"
+            except Exception as move_error:
+                return f"Erro ao mover arquivo corrompido {foto}: {str(move_error)}"
 
         try:
             imagem_desconhecida, erro = SeparadorFotos.preprocessar_imagem(foto)
@@ -182,7 +185,6 @@ class SeparadorFotos:
                 melhor_distancia = float('inf')
                 melhor_aluno = None
 
-                # Comparar com todas as codificações de cada aluno
                 for nome_aluno, codificacoes_aluno in identificacoes.items():
                     distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
                     menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
@@ -194,25 +196,31 @@ class SeparadorFotos:
                     pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
                     Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
                     destino = os.path.join(pasta_aluno, os.path.basename(foto))
-                    shutil.copy(foto, destino)
-                    foto_copiada = True
-                    identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
+                    try:
+                        shutil.copy(foto, destino)
+                        foto_copiada = True
+                        identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
+                    except Exception as e:
+                        return f"Erro ao copiar {foto} para {destino}: {str(e)}"
 
             if not identificados:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
                 return f"Foto {foto} movida para Não Identificadas"
-            
-            return "; ".join(identificados) if identificados else f"Foto {foto} movida para Não Identificadas"
+
+            return "; ".join(identificados)
 
         except Exception as e:
             destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
-            shutil.copy(foto, destino)
+            try:
+                shutil.copy(foto, destino)
+            except Exception as copy_error:
+                return f"Erro ao processar e copiar {foto}: {str(e)}, erro na cópia: {str(copy_error)}"
             return f"Erro ao processar {foto}: {str(e)}"
 
     def carregar_identificacoes(self, pasta_identificacao):
         cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
-        if os.path.exists(cache_file):
+        if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
             try:
                 with open(cache_file, 'rb') as f:
                     identificacoes = pickle.load(f)
@@ -234,13 +242,11 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                # Aumentar num_jitters para capturar mais variações
                 codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
                 nome_aluno = os.path.splitext(arquivo)[0]
-                # Armazenar todas as codificações do aluno como uma lista
                 identificacoes[nome_aluno] = codificacoes
                 self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
             except Exception as e:
@@ -296,9 +302,8 @@ class SeparadorFotos:
             minutos = int(tempo_estimado // 60)
             segundos = int(tempo_estimado % 60)
             tempo_str = f"{minutos}m {segundos}s"
-            self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
-
-            if i % 10 == 0 or i == total_fotos - 1:
+            if fotos_processadas % 10 == 0 or i == total_fotos - 1:
+                self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
                 self.root.update_idletasks()
 
         self.finalizar_processamento(total_fotos, fotos_processadas, tempo_inicio)
@@ -353,6 +358,8 @@ class SeparadorFotos:
                 for i, resultado_batch in enumerate(resultados):
                     if self.cancelar:
                         pool.terminate()
+                        pool.close()
+                        pool.join()
                         break
                     for resultado in resultado_batch:
                         self.log(resultado)
@@ -365,9 +372,8 @@ class SeparadorFotos:
                     minutos = int(tempo_estimado // 60)
                     segundos = int(tempo_estimado % 60)
                     tempo_str = f"{minutos}m {segundos}s"
-                    self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
-
-                    if i % 10 == 0 or i == len(batches) - 1:
+                    if fotos_processadas % 10 == 0 or i == len(batches) - 1:
+                        self.root.after(0, self.atualizar_progresso, percentual, tempo_str)
                         self.root.update_idletasks()
         except Exception as e:
             self.log(f"Erro no Pool: {str(e)}", atualizar_imediatamente=True)
@@ -402,7 +408,11 @@ class SeparadorFotos:
                 self.root.after(0, lambda: messagebox.showerror("Erro", f"Falha ao iniciar: {str(e)}"))
 
 def janela_separador_fotos_multi(parent):
-    janela = tk.Toplevel(parent)
-    janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
-    janela.geometry("740x700")
-    app = SeparadorFotos(janela)
+    root = tk.Toplevel(parent)  # Cria uma nova janela como filha do dashboard
+    app = SeparadorFotos(root)
+    return app
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = SeparadorFotos(root)
+    root.mainloop()
