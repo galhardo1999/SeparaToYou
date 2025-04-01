@@ -219,16 +219,6 @@ class SeparadorFotos:
             return f"Erro ao processar {foto}: {str(e)}"
 
     def carregar_identificacoes(self, pasta_identificacao):
-        cache_file = os.path.join(pasta_identificacao, "identificacoes_cache.pkl")
-        if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
-            try:
-                with open(cache_file, 'rb') as f:
-                    identificacoes = pickle.load(f)
-                self.log("Identificações carregadas do cache.")
-                return identificacoes
-            except Exception as e:
-                self.log(f"Erro ao carregar cache: {str(e)}. Recalculando identificações...")
-
         identificacoes = {}
         for arquivo in os.listdir(pasta_identificacao):
             if self.cancelar:
@@ -242,22 +232,15 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
+                codificacoes = face_recognition.face_encodings(imagem, model="large", num_jitters=5)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
                 nome_aluno = os.path.splitext(arquivo)[0]
                 identificacoes[nome_aluno] = codificacoes
-                self.log(f"Carregada identificação de {nome_aluno} com {len(codificacoes)} codificações")
+                self.log(f"Carregada identificação de {nome_aluno}")
             except Exception as e:
                 self.log(f"Erro ao carregar {arquivo}: {str(e)}")
-
-        try:
-            with open(cache_file, 'wb') as f:
-                pickle.dump(identificacoes, f)
-            self.log("Identificações salvas no cache.")
-        except Exception as e:
-            self.log(f"Erro ao salvar cache: {str(e)}")
         return identificacoes
 
     def processar_fotos_single(self):

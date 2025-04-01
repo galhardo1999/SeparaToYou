@@ -1,11 +1,10 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import separaFotosMulti
-import fazerRelatorio
 import requests
 import sys
+import separaFotosMulti
+import fazerRelatorio
 import ttkbootstrap as ttk
-
 API_URL = "http://127.0.0.1:5000/api/verificar-premium-login"
 
 class LoginWindow:
