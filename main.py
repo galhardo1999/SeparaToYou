@@ -2,8 +2,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import separaFotosMulti
 import fazerRelatorio
-import requests
-import sys
 import ttkbootstrap as ttk
 
 class DashboardWindow:

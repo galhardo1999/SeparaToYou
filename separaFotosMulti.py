@@ -1,4 +1,3 @@
-import face_recognition
 import os
 import shutil
 from pathlib import Path
@@ -9,6 +8,7 @@ from PIL import Image
 from multiprocessing import Pool, cpu_count
 import threading
 import pickle
+import face_recognition
 
 class SeparadorFotos:
     def __init__(self, root):
@@ -23,7 +23,7 @@ class SeparadorFotos:
         self.cancelar = False
         self.processamento_ativo = False
         self.modo_multi = tk.BooleanVar(value=False)
-        self.tolerancia = tk.DoubleVar(value=0.55)
+        self.tolerancia = tk.DoubleVar(value=0.5)  # Ajustado para 0.5 como padrão
 
         style = ttk.Style()
         style.configure("TButton", font=("Helvetica", 11), padding=10)
@@ -129,7 +129,7 @@ class SeparadorFotos:
     def preprocessar_imagem(caminho):
         try:
             imagem = Image.open(caminho).convert('RGB')
-            largura_max = 500
+            largura_max = 1200
             if imagem.width > largura_max:
                 proporcao = largura_max / imagem.width
                 nova_altura = int(imagem.height * proporcao)
@@ -171,44 +171,67 @@ class SeparadorFotos:
                 shutil.copy(foto, destino)
                 return erro
 
-            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="small", num_jitters=1)
+            # Usar modelo "large" para maior precisão
+            codificacoes_desconhecidas = face_recognition.face_encodings(imagem_desconhecida, model="large", num_jitters=1)
 
             if len(codificacoes_desconhecidas) == 0:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
                 return f"Nenhum rosto encontrado em {foto}"
 
-            identificados = []
-            foto_copiada = False
 
-            for j, codificacao_desconhecida in enumerate(codificacoes_desconhecidas):
-                melhor_distancia = float('inf')
-                melhor_aluno = None
-
-                for nome_aluno, codificacoes_aluno in identificacoes.items():
-                    distancias = face_recognition.face_distance(codificacoes_aluno, codificacao_desconhecida)
-                    menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
-                    if menor_distancia < melhor_distancia:
-                        melhor_distancia = menor_distancia
-                        melhor_aluno = nome_aluno
-
-                if melhor_distancia <= tolerancia:
+            # Validação para múltiplos rostos
+            if len(codificacoes_desconhecidas) > 1:
+                alunos_identificados = set()
+                distancias_alunos = {}
+                for codificacao in codificacoes_desconhecidas:
+                    melhor_distancia = float('inf')
+                    melhor_aluno = None
+                    for nome_aluno, codificacoes_aluno in identificacoes.items():
+                        distancias = face_recognition.face_distance(codificacoes_aluno, codificacao)
+                        menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+                        if menor_distancia < melhor_distancia:
+                            melhor_distancia = menor_distancia
+                            melhor_aluno = nome_aluno
+                        distancias_alunos[(codificacao.tobytes(), nome_aluno)] = menor_distancia
+                    if melhor_distancia <= tolerancia:
+                        alunos_identificados.add(melhor_aluno)
+                
+                if len(alunos_identificados) == 1:
+                    melhor_aluno = alunos_identificados.pop()
                     pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
                     Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
                     destino = os.path.join(pasta_aluno, os.path.basename(foto))
-                    try:
-                        shutil.copy(foto, destino)
-                        foto_copiada = True
-                        identificados.append(f"Rosto {j+1} identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})")
-                    except Exception as e:
-                        return f"Erro ao copiar {foto} para {destino}: {str(e)}"
+                    shutil.copy(foto, destino)
+                    return f"Foto {foto} identificada como {melhor_aluno}"
+                else:
+                    destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
+                    shutil.copy(foto, destino)
+                    return f"Foto {foto} contém múltiplos alunos ou não identificada"
+            
+            # Caso de um único rosto
+            codificacao = codificacoes_desconhecidas[0]
+            distancias_ordenadas = []
+            for nome_aluno, codificacoes_aluno in identificacoes.items():
+                distancias = face_recognition.face_distance(codificacoes_aluno, codificacao)
+                menor_distancia = min(distancias) if distancias.size > 0 else float('inf')
+                distancias_ordenadas.append((menor_distancia, nome_aluno))
+            distancias_ordenadas.sort()
+            
+            melhor_distancia, melhor_aluno = distancias_ordenadas[0]
+            segunda_melhor_distancia = distancias_ordenadas[1][0] if len(distancias_ordenadas) > 1 else float('inf')
 
-            if not identificados:
+            # Rejeitar correspondências ambíguas (diferença < 0.1)
+            if melhor_distancia <= tolerancia and (segunda_melhor_distancia - melhor_distancia) >= 0.1:
+                pasta_aluno = os.path.join(pasta_saida, melhor_aluno)
+                Path(pasta_aluno).mkdir(parents=True, exist_ok=True)
+                destino = os.path.join(pasta_aluno, os.path.basename(foto))
+                shutil.copy(foto, destino)
+                return f"Rosto identificado como {melhor_aluno} (distância: {melhor_distancia:.2f})"
+            else:
                 destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
                 shutil.copy(foto, destino)
-                return f"Foto {foto} movida para Não Identificadas"
-
-            return "; ".join(identificados)
+                return f"Foto {foto} movida para Não Identificadas (distância ambígua ou alta: {melhor_distancia:.2f})"
 
         except Exception as e:
             destino = os.path.join(pasta_nao_identificadas, os.path.basename(foto))
@@ -232,7 +255,7 @@ class SeparadorFotos:
                 if erro:
                     self.log(erro)
                     continue
-                codificacoes = face_recognition.face_encodings(imagem, model="large", num_jitters=5)
+                codificacoes = face_recognition.face_encodings(imagem, model="small", num_jitters=10)
                 if not codificacoes:
                     self.log(f"Nenhum rosto encontrado em {arquivo}")
                     continue
@@ -326,10 +349,10 @@ class SeparadorFotos:
         total_fotos = len(fotos)
         self.log(f"Total de fotos a processar: {total_fotos}")
 
-        num_processes = min(int(cpu_count() * 0.8), max(1, total_fotos // 10))
+        num_processes = min(int(cpu_count() * 0.8), max(1, total_fotos // 20))  # Ajustado para batch maior
         tempo_inicio = time.time()
         fotos_processadas = 0
-        batch_size = 10
+        batch_size = 20  # Aumentado para 20
 
         try:
             with Pool(processes=num_processes) as pool:
@@ -376,6 +399,18 @@ class SeparadorFotos:
             self.log(f"Tempo total: {minutos}m {segundos}s", atualizar_imediatamente=True)
             self.root.after(0, lambda: messagebox.showinfo("Concluído", "O processamento das fotos foi finalizado."))
 
+            # Pós-processamento opcional
+            resposta = messagebox.askyesno("Pós-processamento", "Deseja tentar identificar novamente as fotos não identificadas com ajustes?")
+            if resposta:
+                self.log("Iniciando pós-processamento das fotos não identificadas...")
+                pasta_nao_identificadas = os.path.join(self.pasta_saida.get(), "Fotos Não Identificadas")
+                fotos = [os.path.join(pasta_nao_identificadas, f) for f in os.listdir(pasta_nao_identificadas) 
+                         if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'))]
+                identificacoes = self.carregar_identificacoes(self.pasta_identificacao.get())
+                for foto in fotos:
+                    resultado = self.processar_uma_foto((foto, self.pasta_saida.get(), identificacoes, 0.6, False))
+                    self.log(resultado)
+
         self.root.after(0, lambda: self.botao_iniciar.config(state=tk.NORMAL))
         self.root.after(0, lambda: self.botao_cancelar.config(state=tk.DISABLED))
         self.root.after(0, lambda: self.progresso.configure(value=0))
@@ -391,9 +426,10 @@ class SeparadorFotos:
                 self.root.after(0, lambda: messagebox.showerror("Erro", f"Falha ao iniciar: {str(e)}"))
 
 def janela_separador_fotos_multi(parent):
-    root = tk.Toplevel(parent)  # Cria uma nova janela como filha do dashboard
-    app = SeparadorFotos(root)
-    return app
+    janela = tk.Toplevel(parent)
+    janela.title("Separador de Fotos por Reconhecimento Facial - Multi")
+    janela.geometry("740x700")
+    app = SeparadorFotos(janela)
 
 if __name__ == "__main__":
     root = tk.Tk()
